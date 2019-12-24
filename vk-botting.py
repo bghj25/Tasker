@@ -202,5 +202,4 @@ async def send_notifications():  # Отправака уведомлений п�
 async def on_ready():
     bot.loop.create_task(send_notifications())
 
-
 bot.run(cred.vkCommunityToken)
