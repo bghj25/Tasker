@@ -119,11 +119,14 @@ async def change(ctx):
     cursor = con.cursor()
     change_from = ctx.message.reply_message.text.split(" ")
     change_from = " ".join(change_from[2::])
+    await ctx.send('Теперь отправь новое описание')
 
     def verefy(message):
         return message.from_id == ctx.message.from_id
     change_to = await bot.wait_for('message_new', check=verefy, timeout=3600)
-    cursor.execute(f'UPDATE user{ctx.message.from_id} SET description=%s WHERE description=%s', [change_to, change_from])
+    cursor.execute(f'UPDATE user{ctx.message.from_id} SET description=%s WHERE description=%s', [change_to.text, change_from])
+    await ctx.send('изменено')
+
 
 @sqlfunc
 @bot.command(name='мои_задачи')
