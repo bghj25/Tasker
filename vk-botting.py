@@ -73,34 +73,44 @@ def task_to_table(task_description, task_datetime, user_id):
 
 @bot.command(name='новая_задача')
 async def new_task(ctx):
-    await ctx.send('Создание нового задания')
-    await ctx.send('Отправте описание задания')  # орфография и пункутация автора сохранены
+        await ctx.send('Создание нового задания', keyboard=vk_botting.Keyboard.get_empty_keyboard())
+        await ctx.send('Отправте описание задания')  # орфография и пункутация автора сохранены
 
-    def verefy(message):
-        return message.from_id == ctx.message.from_id
-    msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
-    if msg.text == '!отмена!':
-        return await ctx.send('Создание задания отменено')
-    task_description = msg.text
+        def verefy(message):
+            return message.from_id == ctx.message.from_id
+        msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
+        if msg.text == '!отмена!':
+            return await ctx.send('Создание задания отменено', keyboard=draw_menu())
+        task_description = msg.text
 
-    await ctx.send('Теперь введите время в формате ггггммддччмм')  # орфография и пункутация автора сохранены
+        await ctx.send('Теперь введите время в формате ггггммддччмм')  # орфография и пункутация автора сохранены
+        not_create = False
 
-    def verefy(message):
-        if message.from_id == ctx.message.from_id:
-            try:
-                datetime.datetime.strptime(message.text, '%Y%m%d%H%M')
-                return True
-            except ValueError:
-                bot.loop.create_task(ctx.send('Неправильный формат даты'))
-                return False
-        return False
-    msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
-    if msg.text == '!отмена!':
-        return await ctx.send('Создание задания отменено')
-    task_datetime = msg.text
-    task_to_table(task_description, task_datetime, ctx.message.from_id)
-    await ctx.send('Напоминание добавлено', keyboard=draw_menu())
+        def verefy(message):
+            nonlocal not_create
+            if message.from_id == ctx.message.from_id:
+                if message.text == '!отмена!':
+                    bot.loop.create_task(ctx.send('Создание задания отменено', keyboard=draw_menu()))
+                    not_create = True
+                    return True
+                try:
+                    datetime.datetime.strptime(message.text, '%Y%m%d%H%M')
+                    return True
+                except ValueError:
+                    bot.loop.create_task(ctx.send('Неправильный формат даты'))
+                    return False
+            return False
+        msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
 
+        if not not_create:
+            task_datetime = msg.text
+            task_to_table(task_description, task_datetime, ctx.message.from_id)
+            await ctx.send('Напоминание добавлено', keyboard=draw_menu())
+
+
+#@sqlfunc
+#@bot.command(name='изменить')
+#async def change(ctx):
 
 @sqlfunc
 @bot.command(name='мои_задачи')
