@@ -108,9 +108,22 @@ async def new_task(ctx):
             await ctx.send('Напоминание добавлено', keyboard=draw_menu())
 
 
-#@sqlfunc
-#@bot.command(name='изменить')
-#async def change(ctx):
+@sqlfunc
+@bot.command(name='изменить')
+async def change(ctx):
+    if not ctx.message.reply_message:
+        return await ctx.send('Ты творишь какюу-то дичь')
+    con = sqlpool.get_conn()
+    if not con.open:
+        con.ping(True)
+    cursor = con.cursor()
+    change_from = ctx.message.reply_message.text.split(" ")
+    change_from = " ".join(change_from[2::])
+
+    def verefy(message):
+        return message.from_id == ctx.message.from_id
+    change_to = await bot.wait_for('message_new', check=verefy, timeout=3600)
+    cursor.execute(f'UPDATE user{ctx.message.from_id} SET description=%s WHERE description=%s', [change_to, change_from])
 
 @sqlfunc
 @bot.command(name='мои_задачи')
