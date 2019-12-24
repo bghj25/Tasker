@@ -121,6 +121,7 @@ async def change(ctx):
     change_from = " ".join(change_from[2::])
     await ctx.send('Теперь отправь новое описание')
 
+
     def verefy(message):
         return message.from_id == ctx.message.from_id
     change_to = await bot.wait_for('message_new', check=verefy, timeout=3600)
