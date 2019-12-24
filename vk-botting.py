@@ -108,9 +108,26 @@ async def new_task(ctx):
             await ctx.send('Напоминание добавлено', keyboard=draw_menu())
 
 
-#@sqlfunc
-#@bot.command(name='изменить')
-#async def change(ctx):
+@sqlfunc
+@bot.command(name='изменить')
+async def change(ctx):
+    if not ctx.message.reply_message:
+        return await ctx.send('Ты творишь какюу-то дичь')
+    con = sqlpool.get_conn()
+    if not con.open:
+        con.ping(True)
+    cursor = con.cursor()
+    change_from = ctx.message.reply_message.text.split(" ")
+    change_from = " ".join(change_from[2::])
+    await ctx.send('Теперь отправь новое описание')
+
+
+    def verefy(message):
+        return message.from_id == ctx.message.from_id
+    change_to = await bot.wait_for('message_new', check=verefy, timeout=3600)
+    cursor.execute(f'UPDATE user{ctx.message.from_id} SET description=%s WHERE description=%s', [change_to.text, change_from])
+    await ctx.send('изменено')
+
 
 @sqlfunc
 @bot.command(name='мои_задачи')
@@ -184,50 +201,5 @@ async def send_notifications():  # Отправака уведомлений п�
 @bot.listen()
 async def on_ready():
     bot.loop.create_task(send_notifications())
-
-# @sqlfunc
-# def parse_message(user_id, text):  # Парсит сообщение от пользователя
-#     con = sqlpool.get_conn()
-#     if not con.open:
-#         con.ping(True)
-#     cursor = con.cursor()
-#     if text == '!отмена!':
-#         cancel(user_id)
-#     elif table_exist('_' + str(user_id)):  # Если временна таблица суещствует, заполняем ее
-#         cursor.execute('SELECT * FROM _' + str(user_id))
-#         row = cursor.fetchone()
-#         if row['stage'] == 1:  # Если находимся на этапе добавления описания, добавляем описание
-#             cursor.execute('UPDATE _' + str(user_id) + ' SET description = \'' + str(text) + '\''
-#                                                                                              ''
-#                                                                                              ', stage = 2 '
-#                                                                                              'WHERE stage = 1')
-#             write_msg(user_id, 'Теперь введите время в формате ггггммддччмм')
-#         elif row['stage'] == 2:  # Вводим дату и время до тех пор, пока пользователь не отправит их в нужном формате
-#             try:
-#                 cursor.execute('UPDATE _' + str(user_id) + ' SET deadline = ' + str(text) + '00 WHERE stage = 2')
-#             except Exception:
-#                 write_msg(user_id, 'Неверный формат даты')
-#             else:  # После того как все поля временной таблицы заполнены. переносим данные в основную
-#                 if not table_exist('user' + str(user_id)):  # Если у пользователя нет основной таблицы, создаем ее
-#                     cursor.execute('CREATE TABLE  user' + str(user_id) + ' (id INT auto_increment, '
-#                                                                          'description NVARCHAR(100), '
-#                                                                          'deadline DATETIME, PRIMARY KEY (id))')
-#                 cursor.execute('INSERT INTO user' + str(user_id) + '(description, deadline) '
-#                                                                    'SELECT description, deadline FROM _' + str(user_id))
-#                 cursor.execute('DROP TABLE _' + str(user_id))
-#                 write_msg(user_id, 'Напоминание добавлено', keyboard.get_keyboard())
-#              # Различные частные случаи сообщений от пользователя
-#     elif text == 'Привет':
-#         write_msg(user_id, 'Привет', keyboard.get_keyboard())
-#     elif text == 'Новая задача':
-#         create_new_task(user_id)
-#     elif text == 'Мои задачи':
-#         show_my_tasks(user_id)
-#     elif text == 'Начать' or text == 'Start':
-#         write_msg(user_id, 'Новая задача - добавить новое напоминание\n'
-#                             'Мои задачи - просмотреть и редактировать мои напоминания', keyboard.get_keyboard())
-#     else:
-#         write_msg(user_id, 'Я не понимаю твоей команды', keyboard.get_keyboard())
-#     sqlpool.release(con)
 
 bot.run(cred.vkCommunityToken)
