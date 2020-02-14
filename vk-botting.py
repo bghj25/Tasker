@@ -1,314 +1,401 @@
-import credentials as cred
 import vk_botting
+import credentials as cred
 from pymysqlpool.pool import Pool  # Для работы с сервером и БД
 import pymysql
+import asyncio
 import datetime
 bot = vk_botting.Bot(vk_botting.when_mentioned_or_pm(), case_insensitive=True)
 config = {'host': cred.host, 'user': cred.user, 'password': cred.password, 'db': cred.db, 'autocommit': True, 'charset': cred.charset, 'cursorclass': pymysql.cursors.DictCursor}
 try:
+
     sqlpool = Pool(**config)
+
     sqlpool.init()
+
 except Exception as exc:
+
     print(exc)
 
 
-def sex_transform(sex):
-    if int(sex) == 1:
-        return 'м'
+
+
+
+def sqlfunc(func):
+
+
+
+    def wrapper(*args, **kwargs):
+
+        global sqlpool
+
+        try:
+
+            return func(*args, **kwargs)
+
+        except Exception as e:
+
+            print(e)
+
+            try:
+
+                sqlpool = Pool(**config)
+
+                sqlpool.init()
+
+            except Exception as e:
+
+                print(e)
+
+            return func(*args, **kwargs)
+
+
+
+    return wrapper
+
+
+
+
+
+def draw_menu():  # Рисуем клавиатуре
+
+    keyboard = vk_botting.Keyboard()
+
+    keyboard.add_button('Новая_задача', vk_botting.KeyboardColor.PRIMARY)
+
+    keyboard.add_line()
+
+    keyboard.add_button('Мои_задачи',  vk_botting.KeyboardColor.SECONDARY)
+
+    keyboard.add_line()
+
+    keyboard.add_button('Удалить_задачу',  vk_botting.KeyboardColor.SECONDARY)
+
+    return keyboard
+
+
+
+
+
+@sqlfunc
+
+def table_exist(table_name):  # Проверка существования таблицы
+
+    try:
+
+        con = sqlpool.get_conn()
+
+        if not con.open:
+
+            con.ping(True)
+
+        cursor = con.cursor()
+
+        cursor.execute('SELECT * FROM ' + str(table_name))
+
+    except pymysql.ProgrammingError:
+
+        sqlpool.release(con)
+
+        return False
+
     else:
-        return 'ж'
-    
-def mainmenu():
-    keyboard = vk_botting.Keyboard()
-    keyboard.add_button('Искать', vk_botting.KeyboardColor.PRIMARY)
-    keyboard.add_line()
-    keyboard.add_button('Заполнить заново', vk_botting.KeyboardColor.SECONDARY)
-    keyboard.add_line()
-    keyboard.add_button('Инфо', vk_botting.KeyboardColor.SECONDARY)
-    return keyboard
+
+        sqlpool.release(con)
+
+        return True
 
 
-def like_menu():
-    keyboard = vk_botting.Keyboard()
-    keyboard.add_button('Топчег', vk_botting.KeyboardColor.PRIMARY)
-    keyboard.add_button('Нахуй', vk_botting.KeyboardColor.PRIMARY)
-    keyboard.add_line()
-    keyboard.add_button('Стоп', vk_botting.KeyboardColor.SECONDARY)
-    return keyboard
 
 
-def answer_menu():
-    keyboard = vk_botting.Keyboard()
-    keyboard.add_button('НраВ', vk_botting.KeyboardColor.PRIMARY)
-    keyboard.add_button('НаХ', vk_botting.KeyboardColor.PRIMARY)
-    return keyboard
+
+@sqlfunc
+
+def task_to_table(task_description, task_datetime, user_id):
+
+    con = sqlpool.get_conn()
+
+    if not con.open:
+
+        con.ping(True)
+
+    cursor = con.cursor()
+
+    if not table_exist('user' + str(user_id)):  # Если у пользователя нет основной таблицы, создаем ее
+
+        cursor.execute('CREATE TABLE  user' + str(user_id) + ' (id INT auto_increment, '
+
+                                                             'description NVARCHAR(100), '
+
+                                                             'deadline DATETIME, PRIMARY KEY (id))')
+
+    cursor.execute('INSERT INTO user' + str(user_id) + f' (description, deadline) VALUES (%s, %s)',
+
+                   (task_description, task_datetime + '00'))
 
 
-def your_sex_menu():
-    keyboard = vk_botting.Keyboard()
-    keyboard.add_button('Мужской', vk_botting.KeyboardColor.PRIMARY)
-    keyboard.add_button('Женский', vk_botting.KeyboardColor.PRIMARY)
-    return keyboard
 
 
-def search_sex_menu():
-    keyboard = vk_botting.Keyboard()
-    keyboard.add_button('Парня', vk_botting.KeyboardColor.PRIMARY)
-    keyboard.add_button('Девушку', vk_botting.KeyboardColor.PRIMARY)
-    return keyboard
+
+@bot.command(name='новая_задача')
+
+async def new_task(ctx):
+
+        await ctx.send('Создание нового задания', keyboard=vk_botting.Keyboard.get_empty_keyboard())
+
+        await ctx.send('Отправте описание задания')  # орфография и пункутация автора сохранены
 
 
-async def user_registration(ctx):
-    user_info = dict(user_id=None, user_name=None, user_sex=None, search_sex=None, description=None)
-    user_info['user_id'] = ctx.from_id
-    await ctx.send('Для начала представься', keyboard=vk_botting.Keyboard.get_empty_keyboard())
+
+        def verefy(message):
+
+            return message.from_id == ctx.message.from_id
+
+        msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
+
+        if msg.text == '!отмена!':
+
+            return await ctx.send('Создание задания отменено', keyboard=draw_menu())
+
+        task_description = msg.text
+
+
+
+        await ctx.send('Теперь введите время в формате ггггммддччмм')  # орфография и пункутация автора сохранены
+
+        not_create = False
+
+
+
+        def verefy(message):
+
+            nonlocal not_create
+
+            if message.from_id == ctx.message.from_id:
+
+                if message.text == '!отмена!':
+
+                    bot.loop.create_task(ctx.send('Создание задания отменено', keyboard=draw_menu()))
+
+                    not_create = True
+
+                    return True
+
+                try:
+
+                    datetime.datetime.strptime(message.text, '%Y%m%d%H%M')
+
+                    return True
+
+                except ValueError:
+
+                    bot.loop.create_task(ctx.send('Неправильный формат даты'))
+
+                    return False
+
+            return False
+
+        msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
+
+
+
+        if not not_create:
+
+            task_datetime = msg.text
+
+            task_to_table(task_description, task_datetime, ctx.message.from_id)
+
+            await ctx.send('Напоминание добавлено', keyboard=draw_menu())
+
+
+
+
+
+@sqlfunc
+
+@bot.command(name='изменить')
+
+async def change(ctx):
+
+    if not ctx.message.reply_message:
+
+        return await ctx.send('Ты творишь какюу-то дичь')
+
+    con = sqlpool.get_conn()
+
+    if not con.open:
+
+        con.ping(True)
+
+    cursor = con.cursor()
+
+    change_from = ctx.message.reply_message.text.split(" ")
+
+    change_from = " ".join(change_from[2::])
+
+    await ctx.send('Теперь отправь новое описание')
+
+
+
+
 
     def verefy(message):
-        return message.from_id == ctx.from_id
 
-    msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
-    user_info['user_name'] = msg.text
+        return message.from_id == ctx.message.from_id
 
-    await ctx.send('Теперь скажи какого ты пола', keyboard=your_sex_menu())
-    msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
-    if msg.text.lower() == 'мужской':
-        user_info['user_sex'] = 1
-    elif msg.text.lower() == 'женский':
-        user_info['user_sex'] = 2
+    change_to = await bot.wait_for('message_new', check=verefy, timeout=3600)
 
-    await ctx.send('Кого ищешь?', keyboard=search_sex_menu())
-    msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
-    if msg.text.lower() == 'парня':
-        user_info['search_sex'] = 1
-    elif msg.text.lower() == 'девушку':
-        user_info['search_sex'] = 2
+    cursor.execute(f'UPDATE user{ctx.message.from_id} SET description=%s WHERE description=%s', [change_to.text, change_from])
 
-    await ctx.send('Пару слов о тебе', keyboard=vk_botting.Keyboard.get_empty_keyboard())
-    msg = await bot.wait_for('message_new', check=verefy, timeout=3600)
-    user_info['description'] = msg.text
+    await ctx.send('изменено')
+
+
+
+
+
+@sqlfunc
+
+@bot.command(name='мои_задачи')
+
+async def my_tasks(ctx):
+
+    con = sqlpool.get_conn()
+
+    if not con.open:
+
+        con.ping(True)
+
     cursor = con.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id=%s', [user_info['user_id']])
-    users = cursor.fetchall()
-    if users != ():
-        cursor.execute(f'DELETE FROM users WHERE user_id=%s', [user_info['user_id']])
-    #print(user_info)
-    cursor.execute(f'INSERT INTO users (user_id, user_name, user_sex, search_sex, description) '
-                           f'VALUES (%s, %s, %s, %s, %s)',
-                           [user_info['user_id'], user_info['user_name'], user_info['user_sex'],
-                            user_info['search_sex'], user_info['description']])
-    cursor.close()
-    await show_user_form(ctx)
+
+    cursor.execute('SELECT * FROM user' + str(ctx.message.from_id))
+
+    tasks = cursor.fetchall()
+
+    print(tasks)
+
+    if not tasks:
+
+        await ctx.send('Заданий нет', keyboard=draw_menu())
+
+    for task in tasks:
+
+        print(task['description'])
+
+        message = str(task['deadline']) + ' ' + str(task['description'])
+
+        await ctx.send(message, keyboard=draw_menu())
+
+    sqlpool.release(con)
 
 
-async def show_user_form(ctx):
+
+
+
+@bot.command(name='привет')
+
+async def hello(ctx):
+
+    await ctx.send('Пока', keyboard=draw_menu())
+
+
+
+
+
+@sqlfunc
+
+@bot.command(name='удалить_задачу')
+
+async def delete_task(ctx):
+
+    if not ctx.message.reply_message:
+
+        return await ctx.send('Ты творишь какюу-то дичь')
+
+    con = sqlpool.get_conn()
+
+    if not con.open:
+
+        con.ping(True)
+
     cursor = con.cursor()
-    cursor.execute(f'SELECT * FROM users WHERE user_id =%s', [ctx.from_id])
-    user_form = cursor.fetchall()
-    cursor.close()
-#     if user_form[0]['user_sex'] == 1:
-#         us = 'м'
-#     else:
-#         us = 'ж'
-#     if user_form[0]['user_sex'] == 1:
-#         ss = 'м'
-#     else:
-#         ss = 'ж'
-    await ctx.send('Вот твоя анкета: \n' + user_form[0]['user_name'] + '\nЯ: ' + sex_transform(user_form[0]['user_sex']) +
-                   '\nИщу: ' + sex_transform(user_form[0]['search_sex']) + '\n' + str(user_form[0]['description']),
-                   keyboard=mainmenu())  # тут надо расписать красивую отправку сообщений
+
+    delete = ctx.message.reply_message.text.split(" ")
+
+    delete = " ".join(delete[2::])
+
+    cursor.execute(f'DELETE FROM user{ctx.message.from_id} WHERE description = %s', [delete])
+
+    await ctx.send('Удалено', keyboard=draw_menu())
 
 
-@bot.command(name='заполнить заново', has_spaces=True)
-async def reregister(ctx):
-    good_user = await bot.vk_request('groups.isMember', group_id=cred.muecyl_id, user_id=ctx.from_id)
-    if good_user['response'] == 0:
-        await ctx.send('Ты не муецилист')
-    else:
-        await user_registration(ctx)
 
 
-@bot.command(name='начать')
-async def begin(ctx):
-    good_user = await bot.vk_request('groups.isMember', group_id=cred.muecyl_id, user_id=ctx.from_id)
-    # print(good_user)
-    if good_user['response'] == 0:
-        await ctx.send('Ты не муецилист')
-    else:
-        cursor = con.cursor()
-        cursor.execute(f'SELECT * FROM users WHERE user_id =%s', [ctx.from_id])
-        user_form = cursor.fetchall()
-        cursor.close()
-        if user_form == ():
-            await user_registration(ctx)
-        else:
-            await show_user_form(ctx)
+
+@sqlfunc
+
+async def send_notifications():  # Отправака уведомлений пользователю
+
+    while True:
+
+        try:
+
+            con = sqlpool.get_conn()
+
+            if not con.open:
+
+                con.ping(True)
+
+            cursor = con.cursor()
+
+            cursor.execute('SHOW TABLES IN tasks')
+
+            tables = cursor.fetchall()
+
+            for table in tables:
+
+                cursor.execute('SELECT * FROM ' + table['Tables_in_tasks'] + ' WHERE deadline < NOW()')
+
+                tasks = cursor.fetchall()
+
+                for task in tasks:
+
+                    notification = 'Напоминание №' + str(task['id']) + ' \n' + str(task['description'])
+
+                    await bot.send_message(str(table['Tables_in_tasks']).replace('user', ''), notification)
+
+                    cursor.execute('DELETE FROM ' + table['Tables_in_tasks'] + ' WHERE description = \'' +
+
+                                   str(task['description']) + '\'')  # Запись об отправленном напоминании удаляем из БД
+
+                print(tasks)
+
+            sqlpool.release(con)
+
+        except Exception as e:
+
+            try:
+
+                await bot.send_message(173427551, str(e), keyboard=draw_menu())
+
+            except Exception as e1:
+
+                print(e)
+
+                print(e1)
+
+        finally:
+
+            await asyncio.sleep(60)
 
 
-async def suggest(ctx):
-    cursor = con.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id={}'.format(ctx.from_id))
-    user = cursor.fetchone()
-    cursor.execute('SELECT * FROM users WHERE user_sex={} AND search_sex={}'.format(user['search_sex'], user['user_sex']))
-    possible_users = cursor.fetchall()
-    if user['suggested_users'] is not None:
-        already_suggested = user['suggested_users'].split('s')
-    else:
-        already_suggested = list()
-    done = False
-    for possible_user in possible_users:
-        print(str(possible_user['user_id'])) 
-        print(ctx.from_id)
-        if (str(possible_user['user_id']) not in already_suggested) and (str(possible_user['user_id']) != ctx.from_id):
-            await ctx.send('Нашел для тебя:\n{}\n{}'.format(possible_user['user_name'], possible_user['description']), keyboard=like_menu())
-            already_suggested.append(str(possible_user['user_id']))
-            already_suggested = 's'.join(already_suggested)
-            cursor.execute('UPDATE users SET suggested_users = \'{}\' WHERE user_id = {}'.format(already_suggested, ctx.from_id))
-            cursor.execute('UPDATE users SET last_suggestion = {} WHERE user_id = {}'.format(possible_user['user_id'], ctx.from_id))
-            done = True
-            break
-    if not done:
-        cursor.execute('UPDATE users SET last_suggestion = -1 WHERE user_id = {}'.format(ctx.from_id))
-        await ctx.send('Нет подходящих', keyboard=mainmenu())
-    cursor.close()
 
 
-@bot.command(name='искать')
-async def search(ctx):
-    cursor = con.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id={}'.format(ctx.from_id))
-    user = cursor.fetchone()
-    print(user)
-    if user is None:
-        ctx.send('Для начала зарегистрируйся')
-        await user_registration(ctx)
-    else:
-        await suggest(ctx)
+
+@bot.listen()
+
+async def on_ready():
+
+    bot.loop.create_task(send_notifications())
 
 
-@bot.command(name='топчег')
-async def topcheg(ctx):
-    cursor = con.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id={}'.format(ctx.from_id))
-    user = cursor.fetchone()
-    if user['last_suggestion'] == -1:
-        await ctx.send('Вероятно, тебе никого не предлагали, или предложение уже не актуально')
-    else:
-        #рассматриваем два случая: пустая и непустая очередь у найденного юзера
-        cursor.execute('SELECT * FROM users WHERE user_id = {}'.format(user['last_suggestion']))
-        suggestion = cursor.fetchone()
-        print(suggestion['queue']) 
-        print ('hi') 
-        if suggestion['queue'] != '':
-            queue = suggestion['queue'].split('s')
-        else:
-            queue = list()
-        print(queue) 
-        if len(queue) == 0:
-            print('sendind...')
-            await bot.send_message(peer_id=user['last_suggestion'], message='Тебя оценили\n{}\n{}'.format(user['user_name'], user['description']), keyboard=answer_menu())
-        if str(ctx.from_id) not in queue:
-            queue.append(str(user['user_id']))
-            queue = 's'.join(queue)
-            cursor.execute('UPDATE users SET queue = \'{}\' WHERE user_id={}'.format(queue, user['last_suggestion']))
-    cursor.close()
-    await suggest(ctx)
 
-
-@bot.command(name='нахуй')
-async def nahui(ctx):
-    await suggest(ctx)
-
-
-@bot.command(name='стоп')
-async def restart(ctx):
-    cursor = con.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id={}'.format(ctx.from_id))
-    user = cursor.fetchone()
-    if user['suggested_users']!='' and user['suggested_users'] is not None:
-        suggested = user['suggested_users'].split('s')
-        suggested.pop()
-        suggested = 's'.join(suggested)
-        print('UPDATE users SET suggested_users =\'{}\' WHERE user_id = {}'.format(suggested, ctx.from_id))
-        cursor.execute('UPDATE users SET suggested_users =\'{}\' WHERE user_id = {}'.format(suggested, ctx.from_id))
-    cursor.execute('UPDATE users SET last_suggestion =-1 WHERE user_id = {}'.format(ctx.from_id))
-    cursor.close()
-    await show_user_form(ctx)
-
-
-@bot.command(name='нрав')
-async def like(ctx):
-    cursor = con.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id={}'.format(ctx.from_id))
-    user = cursor.fetchone()
-    if user['queue'] is not None and user['queue'] != '':
-        queue = user['queue'].split('s')
-        await bot.send_message(peer_id=queue[0], message='Добавляйся, vk.com/id{}'.format(ctx.from_id))
-        await ctx.send('Добавляйся, vk.com/id{}'.format(queue[0]))
-        queue.pop(0)
-        queue = 's'.join(queue)
-        cursor.execute('UPDATE users SET queue = \'{}\' WHERE user_id = {}'.format(queue, user['user_id']))
-        cursor.close()
-        await next_suggestion(ctx)
-    else:
-        cursor.close()
-        await ctx.send('информация не акутальна', keyboard=mainmenu())
-        await show_user_form(ctx)
-
-
-@bot.command(name='нах')
-async def nah(ctx):
-    cursor = con.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id={}'.format(ctx.from_id))
-    user = cursor.fetchone()
-    if user['queue'] is not None and user['queue'] != '':
-        queue = user['queue'].split('s')
-        queue.pop(0)
-        queue = 's'.join(queue)
-        cursor.execute('UPDATE users SET queue = \'{}\' WHERE user_id = {}'.format(queue, user['user_id']))
-        cursor.close()
-        await next_suggestion(ctx)
-    else:
-        cursor.close()
-        await ctx.send('информация не акутальна', keyboard=mainmenu())
-        await show_user_form(ctx)
-
-
-async def next_suggestion(ctx):
-    cursor = con.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id={}'.format(ctx.from_id))
-    user = cursor.fetchone()
-    print(user['queue'])
-    if user['queue'] is None or user['queue'] == '':
-        cursor.close()
-        await ctx.send('Больше нет заявок')
-        await show_user_form(ctx)
-    else:
-        queue = user['queue'].split('s')
-        print(queue)
-        cursor.execute('SELECT * FROM users WHERE user_id={}'.format(queue[0]))
-        suggestion = cursor.fetchone()
-        await ctx.send('Тебя оценили\n{}\n{}'.format(suggestion['user_name'], suggestion['description']), keyboard=answer_menu())
-        cursor.close()
-
-
-@bot.command(name='инфо')
-async def info(ctx):
-    await ctx.send('v1.0.6 \n так же здесь будет инутрукция')
-# async def reset_suggestions():
-#     cursor = con.cursor()
-#     cursor.execute('UPDATE users SET suggested_users = \'\'')
-#     cursor.execute('UPDATE users SET last_suggestion = -1')
-#     cursor.close()
-#     print(datetime.datetime.now())
-#
-#
-# @bot.listen()
-# async def on_ready():
-#     bot.loop.create_task(reset_suggestions())
-#
-con = sqlpool.get_conn()
-if not con.open:
-    con.ping(True)
-
-bot.run(cred.token)
-
+bot.run(cred.vkCommunityToken)
