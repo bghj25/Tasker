@@ -5,7 +5,7 @@ import pymysql
 import asyncio
 import datetime
 bot = vk_botting.Bot(vk_botting.when_mentioned_or_pm(), case_insensitive=True)
-config = {'host': cred.host, 'user': cred.user, 'password': cred.password, 'db': cred.db, 'autocommit': True, 'charset': cred.charset, 'cursorclass': pymysql.cursors.DictCursor}
+config = {'host': cred.host, 'user': cred.user, 'password': cred.password, 'port': 3388, 'db': cred.db, 'autocommit': True, 'charset': cred.charset, 'cursorclass': pymysql.cursors.DictCursor}
 try:
 
     sqlpool = Pool(**config)
